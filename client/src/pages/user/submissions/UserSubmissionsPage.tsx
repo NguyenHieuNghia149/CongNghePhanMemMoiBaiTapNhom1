@@ -40,8 +40,6 @@ const UserSubmissionsPage: React.FC = () => {
           limit: pageSize,
           offset,
         })
-
-        console.log(result)
         setSubmissions(result.submissions)
         setTotal(result.total)
       } catch (error) {
@@ -231,10 +229,10 @@ const UserSubmissionsPage: React.FC = () => {
               <Divider orientation="left">Source Code</Divider>
               <div
                 style={{
-                  backgroundColor: '#1e1e1e',
+                  backgroundColor: 'var(--muted)',
                   padding: '12px',
                   borderRadius: '8px',
-                  color: '#d4d4d4',
+                  color: 'var(--foreground)',
                   fontFamily: 'monospace',
                   whiteSpace: 'pre-wrap',
                   overflowX: 'auto',
@@ -266,7 +264,12 @@ const UserSubmissionsPage: React.FC = () => {
                             </Tag>
                           </div>
                           {!item.ok && (
-                            <div style={{ fontSize: '12px', color: '#ff4d4f' }}>
+                            <div
+                              style={{
+                                fontSize: '12px',
+                                color: 'var(--destructive)',
+                              }}
+                            >
                               <div>Expected: {item.expectedOutput}</div>
                               <div>Actual: {item.actualOutput}</div>
                             </div>

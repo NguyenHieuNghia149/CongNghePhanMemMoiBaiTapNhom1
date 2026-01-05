@@ -235,6 +235,10 @@ export class ChallengeService {
     return this.problemRepository.getTagsByTopicId(topicId);
   }
 
+  async getAllTags(): Promise<string[]> {
+    return this.problemRepository.getAllTags();
+  }
+
   async listProblemsByTopicAndTags(params: {
     topicId: string;
     tags: string[];
@@ -297,14 +301,62 @@ export class ChallengeService {
     };
   }
 
-  async getChallengeById(challengeId: string, userId?: string): Promise<ChallengeResponse> {
+  async getAllChallenges(
+    page: number,
+    limit: number,
+    search?: string,
+    sortField?: string,
+    sortOrder?: 'asc' | 'desc'
+  ): Promise<{
+    items: Array<{
+      id: string;
+      title: string;
+      description: string | null;
+      difficulty: string;
+      visibility: boolean;
+      topicId: string;
+      topicName: string;
+      lessonId: string | null;
+      createdAt: Date | string;
+    }>;
+    total: number;
+  }> {
+    const { data, total } = await this.problemRepository.findAllProblems(
+      page,
+      limit,
+      search,
+      sortField,
+      sortOrder
+    );
+    const items = data.map(p => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      difficulty: p.difficult,
+      visibility: p.visibility,
+      topicId: p.topicId,
+      topicName: p.topicName,
+      lessonId: p.lessonId,
+      createdAt: p.createdAt,
+    }));
+    return { items, total };
+  }
+
+  async getChallengeById(
+    challengeId: string,
+    userId?: string,
+    options?: { showAllTestcases?: boolean }
+  ): Promise<ChallengeResponse> {
     const problem = await this.problemRepository.findById(challengeId);
 
     if (!problem) {
       throw new NotFoundException(`Challenge with ID ${challengeId} not found.`);
     }
 
-    const testcases = await this.testcaseRepository.findPublicByProblemId(challengeId);
+    // Admin/Teacher can view all testcases, regular users see only public testcases
+    const testcases = options?.showAllTestcases
+      ? await this.testcaseRepository.findByProblemId(challengeId)
+      : await this.testcaseRepository.findPublicByProblemId(challengeId);
     const visibleSolution = await this.fetchVisibleSolutionWithApproaches(challengeId);
 
     const isSolved = userId
@@ -368,7 +420,20 @@ export class ChallengeService {
       throw new NotFoundException(`Failed to update challenge with ID ${challengeId}.`);
     }
 
-    return this.getChallengeById(challengeId);
+    // Handle solution update if provided
+    if (updateData.solution) {
+      await this.problemRepository.updateSolutionTransactional(challengeId, updateData.solution);
+    }
+
+    // Handle testcases update if provided
+    if (updateData.testcases) {
+      console.log('Updating testcases:', updateData.testcases.length);
+      await this.testcaseRepository.updateTestcasesTransactional(challengeId, updateData.testcases);
+    } else {
+      console.log('No testcases provided in updateData');
+    }
+
+    return this.getChallengeById(challengeId, undefined, { showAllTestcases: true });
   }
 
   async deleteChallenge(challengeId: string): Promise<void> {

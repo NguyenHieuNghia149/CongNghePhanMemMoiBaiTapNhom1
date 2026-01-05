@@ -1,4 +1,4 @@
-import { lessons, LessonEntity, LessonInsert } from '@/database/schema';
+import { lessons, LessonEntity, LessonInsert, comments } from '@/database/schema';
 import { BaseRepository } from '../base.repository';
 import { eq, like, desc, asc, and, or } from 'drizzle-orm';
 import { db } from '@/database/connection';
@@ -141,9 +141,14 @@ export class AdminLessonRepository extends BaseRepository<typeof lessons, Lesson
   }
 
   async updateLesson(id: string, payload: Partial<LessonInsert>): Promise<LessonEntity> {
+    // Filter out undefined values but keep null values (for explicitly setting to null)
+    const cleanPayload = Object.fromEntries(
+      Object.entries(payload).filter(([_, value]) => value !== undefined)
+    );
+    
     const [lesson] = await db
       .update(lessons)
-      .set({ ...payload, updatedAt: new Date() })
+      .set({ ...cleanPayload, updatedAt: new Date() })
       .where(eq(lessons.id, id))
       .returning();
 
@@ -154,7 +159,10 @@ export class AdminLessonRepository extends BaseRepository<typeof lessons, Lesson
   }
 
   async deleteLesson(id: string): Promise<void> {
-    // Delete all learned lessons associated with this lesson first
+    // Delete all comments associated with this lesson first
+    await db.delete(comments).where(eq(comments.lessonId, id));
+    
+    // Delete all learned lessons associated with this lesson
     await db.delete(learnedLessons).where(eq(learnedLessons.lessonId, id));
     
     // Then delete the lesson itself

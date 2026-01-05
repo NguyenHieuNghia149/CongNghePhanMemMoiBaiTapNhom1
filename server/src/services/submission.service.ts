@@ -111,8 +111,7 @@ export class SubmissionService {
     try {
       queueLength = await queueService.getQueueLength();
     } catch (err) {
-      // Log and continue — treat as queue unavailable
-      console.warn('Queue service unavailable, proceeding without queue:', err);
+      // Treat as queue unavailable
       queueLength = 0;
     }
     const estimatedWaitTime = queueLength * 30; // Estimate 30 seconds per job
@@ -143,7 +142,6 @@ export class SubmissionService {
     } catch (err) {
       // Do not fail submission if queue is unavailable — keep submission record and return
       enqueued = false;
-      console.warn('Failed to enqueue submission job; submission will remain PENDING:', err);
     }
 
     // TODO: Emit WebSocket event when WebSocketService is properly implemented
@@ -325,7 +323,8 @@ export class SubmissionService {
     }
 
     // Chỉ cộng điểm khi submission ACCEPTED và user chưa solve problem này trước đó
-    if (data.status === ESubmissionStatus.ACCEPTED) {
+    // VÀ submission không phải là bài thi (examParticipationId phải undefined/null)
+    if (data.status === ESubmissionStatus.ACCEPTED && !submissionBeforeUpdate.examParticipationId) {
       // Check TRƯỚC KHI update status - xem user đã có submission ACCEPTED nào cho problem này chưa
       const hasSolvedBefore = await this.submissionRepository.hasUserSolvedProblem(
         submissionBeforeUpdate.userId,

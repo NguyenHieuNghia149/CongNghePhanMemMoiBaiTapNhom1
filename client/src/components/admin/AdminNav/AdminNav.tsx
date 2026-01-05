@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/api/useAuth'
+import { isOwner } from '@/utils/roleUtils'
 import {
   LayoutDashboard,
   Users,
@@ -10,6 +11,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Code,
 } from 'lucide-react'
 import './AdminNav.scss'
 
@@ -20,11 +22,16 @@ interface NavItem {
   icon: React.ReactNode
 }
 
-const AdminNav: React.FC = () => {
+interface AdminNavProps {
+  isCollapsed: boolean
+  onToggle: () => void
+}
+
+const AdminNav: React.FC<AdminNavProps> = ({ isCollapsed, onToggle }) => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { logout } = useAuth()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const { logout, user } = useAuth()
+  // Internal state removed in favor of props
 
   const navItems: NavItem[] = [
     {
@@ -57,6 +64,18 @@ const AdminNav: React.FC = () => {
       path: '/admin/topics',
       icon: <FileText size={20} />,
     },
+    {
+      id: 'challenges',
+      label: 'Manage Challenges',
+      path: '/admin/challenges',
+      icon: <Code size={20} />,
+    },
+    {
+      id: 'exams',
+      label: 'Manage Exams',
+      path: '/admin/exams',
+      icon: <FileText size={20} />,
+    },
   ]
 
   const isActive = (path: string) => {
@@ -77,7 +96,7 @@ const AdminNav: React.FC = () => {
         </div>
         <button
           className="admin-nav__toggle"
-          onClick={() => setIsCollapsed(!isCollapsed)}
+          onClick={onToggle}
           title={isCollapsed ? 'Expand' : 'Collapse'}
         >
           {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
@@ -86,22 +105,27 @@ const AdminNav: React.FC = () => {
 
       {/* Navigation Items */}
       <ul className="admin-nav__list">
-        {navItems.map(item => (
-          <li key={item.id} className="admin-nav__item">
-            <button
-              className={`admin-nav__link ${
-                isActive(item.path) ? 'admin-nav__link--active' : ''
-              }`}
-              onClick={() => navigate(item.path)}
-              title={isCollapsed ? item.label : ''}
-            >
-              <span className="admin-nav__icon">{item.icon}</span>
-              {!isCollapsed && (
-                <span className="admin-nav__label">{item.label}</span>
-              )}
-            </button>
-          </li>
-        ))}
+        {navItems
+          .filter(item => {
+            if (item.id === 'teachers') return isOwner(user)
+            return true
+          })
+          .map(item => (
+            <li key={item.id} className="admin-nav__item">
+              <button
+                className={`admin-nav__link ${
+                  isActive(item.path) ? 'admin-nav__link--active' : ''
+                }`}
+                onClick={() => navigate(item.path)}
+                title={isCollapsed ? item.label : ''}
+              >
+                <span className="admin-nav__icon">{item.icon}</span>
+                {!isCollapsed && (
+                  <span className="admin-nav__label">{item.label}</span>
+                )}
+              </button>
+            </li>
+          ))}
       </ul>
 
       {/* Bottom Actions */}

@@ -4,6 +4,7 @@ import {
   JoinExamSchema,
   SubmitExamSchema,
   GetExamLeaderboardSchema,
+  UpdateExamSchema,
 } from '@/validations/exam.validation';
 import { ExamService } from '@/services/exam.service';
 import { authenticationToken, requireTeacher } from '@/middlewares/auth.middleware';
@@ -17,7 +18,7 @@ const examController = new ExamController(examService);
 // Rate limiting
 const examRateLimit = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 1000,
   message: 'Too many exam requests from this IP, please try again later.',
 });
 
@@ -29,7 +30,7 @@ const examSessionLimit = rateLimitMiddleware({
 
 const createExamRateLimit = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 10 exam creation requests per windowMs
+  max: 100, // limit each IP to 10 exam creation requests per windowMs
   message: 'Too many exam creation requests from this IP, please try again later.',
 });
 
@@ -139,7 +140,23 @@ router.post(
   requireTeacher,
   createExamRateLimit,
   validate(CreateExamSchema),
+  validate(CreateExamSchema),
   examController.createExam.bind(examController)
+);
+
+router.put(
+  '/:id',
+  authenticationToken,
+  requireTeacher,
+  validate(UpdateExamSchema),
+  examController.updateExam.bind(examController)
+);
+
+router.delete(
+  '/:id',
+  authenticationToken,
+  requireTeacher,
+  examController.deleteExam.bind(examController)
 );
 
 // Error handling middleware (must be last)

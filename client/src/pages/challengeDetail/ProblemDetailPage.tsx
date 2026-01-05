@@ -7,7 +7,6 @@ import { ProblemDetailResponse } from '../../types/challenge.types'
 import ProblemHeader from '../../components/problem/ProblemHeader'
 import { useProblemNavigation } from '../../hooks/common/useProblemNavigation'
 import { submissionsService } from '@/services/api/submissions.service'
-import { examService } from '@/services/api/exam.service'
 import { useSelector } from 'react-redux'
 import type { RootState } from '@/store/stores'
 import type {
@@ -17,7 +16,7 @@ import type {
 } from '@/types/submission.types'
 import type { TestCase, OutputState } from '@/types/editor.types'
 import { io, Socket } from 'socket.io-client'
-import useDebouncedCallback from '@/hooks/useDebouncedCallback'
+import { normalizeSubmissionStatus } from '@/utils/submissionStatus'
 
 // Types moved to src/types/editor.types.ts
 
@@ -69,6 +68,20 @@ export default function ProblemDetailPage({
         const response = await challengeService.getChallengeById(id)
         if (response.success) {
           setProblemData(response.data)
+
+          // Restore code from localStorage (F5 recovery)
+          try {
+            const storageKey = `problem_${id}_code`
+            const savedCode = localStorage.getItem(storageKey)
+            if (savedCode && savedCode !== DEFAULT_CODE) {
+              setCode(savedCode)
+            } else {
+              setCode(DEFAULT_CODE)
+            }
+          } catch (err) {
+            console.warn('Failed to restore code from localStorage:', err)
+            setCode(DEFAULT_CODE)
+          }
         } else {
           setError('Failed to load problem data')
         }
@@ -206,6 +219,7 @@ export default function ProblemDetailPage({
           passedTests: passed,
           totalTests: total,
           results: publicResults.length ? publicResults : prev.results,
+          isSubmit: false,
         }))
 
         if (isTerminal) {
@@ -335,7 +349,7 @@ export default function ProblemDetailPage({
     if (!socketRef.current) {
       // Connect to the backend root URL (not /api)
       const socketUrl =
-        import.meta.env.REACT_APP_API_URL || 'http://localhost:3001'
+        import.meta.env.REACT_APP_API_URL || 'https://api.algoforge.site'
       socketRef.current = io(socketUrl, {
         transports: ['websocket'],
         withCredentials: true,
@@ -399,7 +413,7 @@ export default function ProblemDetailPage({
 
   const handleSubmit = async () => {
     if (!problemData?.problem.id) return
-    setOutput({ status: 'running', message: 'Submitting...' })
+    setOutput({ status: 'running', message: 'Submitting...', isSubmit: true })
     try {
       const payload: RunOrSubmitPayload = {
         sourceCode: code,
@@ -450,8 +464,14 @@ export default function ProblemDetailPage({
           const publicResults = allResults.filter(
             r => r.isPublic !== false && testCases[r.index]?.isPublic !== false
           )
-          const passed = publicResults.filter(r => r.ok).length
-          const total = publicResults.length
+
+          // For submit: Use backend status (all testcases)
+          // If backend doesn't provide summary, calculate from results
+          const allPassed =
+            update.result?.passed ?? allResults.filter(r => r.ok).length
+          const allTotal = update.result?.total ?? allResults.length
+          const uiStatus = normalizeSubmissionStatus(normalized)
+
           setOutput(prev => ({
             status: isTerminal
               ? normalized === 'accepted'
@@ -461,17 +481,15 @@ export default function ProblemDetailPage({
             message: isTerminal
               ? normalized === 'accepted'
                 ? 'You have successfully completed this problem!'
-                : `Status: ${normalized}${
-                    typeof passed === 'number' && typeof total === 'number'
-                      ? ` • ${passed}/${total}`
-                      : ''
-                  }`
-              : typeof passed === 'number' && typeof total === 'number'
-                ? `Running... ${passed}/${total} passed`
+                : `Status: ${normalized}${typeof allPassed === 'number' && typeof allTotal === 'number' ? ` • ${allPassed}/${allTotal}` : ''}`
+              : typeof allPassed === 'number' && typeof allTotal === 'number'
+                ? `Running... ${allPassed}/${allTotal} passed`
                 : 'Running...',
-            passedTests: passed,
-            totalTests: total,
+            passedTests: allPassed,
+            totalTests: allTotal,
             results: publicResults.length ? publicResults : prev.results,
+            isSubmit: true,
+            normalizedStatus: uiStatus,
           }))
           if (isTerminal) {
             isCompletedRef.current = true
@@ -507,60 +525,73 @@ export default function ProblemDetailPage({
             'failed',
           ]
           if (terminal.includes(normalized)) {
-            // Filter to only show public test cases
+            // Filter public test cases for display
             const allResults = coerceResults(detail.result?.results) || []
             const publicResults = allResults.filter(
               r =>
                 r.isPublic !== false && testCases[r.index]?.isPublic !== false
             )
 
-            // Recalculate summary based on public test cases only
-            const publicPassed = publicResults.filter(r => r.ok).length
-            const publicTotal = publicResults.length
+            // Use ALL testcases count from backend for status consistency
+            // If backend doesn't provide summary, calculate from results
+            const allPassed =
+              detail.result?.passed ?? allResults.filter(r => r.ok).length
+            const allTotal = detail.result?.total ?? allResults.length
+            const uiStatus = normalizeSubmissionStatus(normalized)
 
             setOutput({
               status: normalized === 'accepted' ? 'accepted' : 'rejected',
               message:
                 normalized === 'accepted'
                   ? 'You have successfully completed this problem!'
-                  : `Status: ${normalized}. Passed ${publicPassed}/${publicTotal}`,
-              passedTests: publicPassed,
-              totalTests: publicTotal,
+                  : `Status: ${normalized}. Passed ${allPassed}/${allTotal}`,
+              passedTests: allPassed,
+              totalTests: allTotal,
               results: publicResults,
+              isSubmit: true,
+              normalizedStatus: uiStatus,
             })
             clearPoll()
             return true
           } else {
-            // Filter to only show public test cases
+            // Filter public test cases for display
             const allResults = coerceResults(detail.result?.results) || []
             const publicResults = allResults.filter(
               r =>
                 r.isPublic !== false && testCases[r.index]?.isPublic !== false
             )
 
-            // Recalculate summary based on public test cases only
-            const publicPassed = publicResults.filter(r => r.ok).length
-            const publicTotal = publicResults.length
+            // Use ALL testcases count from backend
+            // If backend doesn't provide summary, calculate from results
+            const allPassed =
+              detail.result?.passed ?? allResults.filter(r => r.ok).length
+            const allTotal = detail.result?.total ?? allResults.length
+            const uiStatus = normalizeSubmissionStatus(normalized)
 
             setOutput({
               status: 'running',
               message:
-                publicPassed !== undefined && publicTotal !== undefined
-                  ? `Running... ${publicPassed}/${publicTotal} passed`
+                allPassed !== undefined && allTotal !== undefined
+                  ? `Running... ${allPassed}/${allTotal} passed`
                   : 'Running...',
-              passedTests: publicPassed,
-              totalTests: publicTotal,
+              passedTests: allPassed,
+              totalTests: allTotal,
               results: publicResults,
+              isSubmit: true,
+              normalizedStatus: uiStatus,
             })
             return false
           }
         } catch (e) {
+          const uiStatus = normalizeSubmissionStatus('failed')
           setOutput({
             status: 'rejected',
             message:
               (e as { message?: string }).message ||
               'Failed to get submission status',
             error: (e as { message?: string }).message,
+            isSubmit: true,
+            normalizedStatus: uiStatus,
           })
           clearPoll()
           return true
@@ -587,6 +618,7 @@ export default function ProblemDetailPage({
           (err as { message?: string }).message ||
           'Submit failed. Please try again.',
         error: (err as { message?: string }).message,
+        isSubmit: true,
       })
     }
   }
@@ -595,69 +627,20 @@ export default function ProblemDetailPage({
     setCode(DEFAULT_CODE)
   }
 
-  // Autosave: when participating in an exam, sync code edits to server (debounced)
-  const [autosaveStatus, setAutosaveStatus] = useState<
-    'idle' | 'saving' | 'saved' | 'error'
-  >('idle')
-
-  const {
-    callback: debouncedSync,
-    flush: flushSync,
-    cancel: cancelSync,
-  } = useDebouncedCallback(
-    async (latestCode: string) => {
-      const problemId = problemData?.problem?.id
-      if (!participationIdToUse || !problemId) return
-      const answers = {
-        [problemId]: {
-          sourceCode: latestCode,
-          language: selectedLanguage,
-          updatedAt: Date.now(),
-        },
-      }
-      await examService.syncSession(participationIdToUse, answers)
-    },
-    2000,
-    {
-      onStart: () => setAutosaveStatus('saving'),
-      onSuccess: () => {
-        setAutosaveStatus('saved')
-        window.setTimeout(() => setAutosaveStatus('idle'), 2000)
-      },
-      onError: () => {
-        setAutosaveStatus('error')
-        window.setTimeout(() => setAutosaveStatus('idle'), 3000)
-      },
-    }
-  )
-
   const handleCodeChange = (next: string) => {
     setCode(next)
-    try {
-      debouncedSync(next)
-    } catch (err) {
-      // intentionally ignore autosave errors here
-      // (network errors are surfaced via onError handler)
-      void err
-    }
   }
 
+  // Save code to localStorage whenever it changes (for F5 persistence)
   useEffect(() => {
-    return () => {
-      try {
-        flushSync()
-      } catch (e) {
-        // ignore flush errors during unmount
-        void e
-      }
-      try {
-        cancelSync()
-      } catch (e) {
-        // ignore cancel errors during unmount
-        void e
-      }
+    if (!id || !code) return
+    try {
+      const storageKey = `problem_${id}_code`
+      localStorage.setItem(storageKey, code)
+    } catch (err) {
+      console.warn('Failed to save code to localStorage:', err)
     }
-  }, [flushSync, cancelSync])
+  }, [code, id])
 
   // Convert API test cases to the format expected by CodeEditorSection
   const testCases: TestCase[] =
@@ -671,7 +654,7 @@ export default function ProblemDetailPage({
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-950 text-gray-100">
+      <div className="flex h-screen items-center justify-center bg-background text-foreground">
         <div className="text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-green-500"></div>
           <p>Loading problem...</p>
@@ -682,7 +665,7 @@ export default function ProblemDetailPage({
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-950 text-gray-100">
+      <div className="flex h-screen items-center justify-center bg-background text-foreground">
         <div className="text-center">
           <p className="mb-4 text-red-400">{error}</p>
           <button
@@ -697,7 +680,7 @@ export default function ProblemDetailPage({
   }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-950 text-gray-100">
+    <div className="flex h-screen flex-col bg-background text-foreground">
       {/* Problem Header */}
       <ProblemHeader
         onPrev={goPrev}
@@ -714,7 +697,7 @@ export default function ProblemDetailPage({
         className="flex min-h-0 flex-1 flex-col lg:flex-row"
       >
         <div
-          className="flex h-full min-h-0 min-w-[200px] flex-col overflow-hidden border-b border-gray-800 lg:border-b-0 lg:border-r"
+          className="flex h-full min-h-0 min-w-[200px] flex-col overflow-hidden border-b border-border lg:border-b-0 lg:border-r"
           style={{
             flexBasis: `${problemPanelWidth}%`,
             maxWidth: `${problemPanelWidth}%`,
@@ -727,7 +710,7 @@ export default function ProblemDetailPage({
           />
         </div>
         <div
-          className="hidden w-0.5 cursor-col-resize select-none bg-gray-800 lg:block"
+          className="hidden w-0.5 cursor-col-resize select-none bg-border lg:block"
           onMouseDown={startDraggingSplit}
           onTouchStart={startDraggingSplit}
           onDoubleClick={resetSplit}
@@ -746,7 +729,6 @@ export default function ProblemDetailPage({
           <CodeEditorSection
             code={code}
             onCodeChange={handleCodeChange}
-            autosaveStatus={autosaveStatus}
             selectedLanguage={selectedLanguage}
             onLanguageChange={setSelectedLanguage}
             testCases={testCases}

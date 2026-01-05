@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   ChallengeController,
   CreateChallengeSchema,
+  UpdateChallengeSchema,
   ListProblemsByTopicSchema,
   UpdateSolutionVisibilitySchema,
 } from '@/controllers/challenge.controller';
@@ -22,13 +23,13 @@ const challengeController = new ChallengeController(challengeService);
 // Rate limiting
 const challengeRateLimit = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // limit each IP to 100 requests per windowMs
   message: 'Too many challenge requests from this IP, please try again later.',
 });
 
 const createChallengeRateLimit = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 challenge creation requests per windowMs
+  max: 100, // limit each IP to 10 challenge creation requests per windowMs
   message: 'Too many challenge creation requests from this IP, please try again later.',
 });
 
@@ -39,6 +40,13 @@ router.get(
   optionalAuth,
   // validate(ListProblemsByTopicSchema),
   challengeController.listProblemsByTopic.bind(challengeController)
+);
+
+router.get(
+  '/tags',
+  challengeRateLimit,
+  optionalAuth,
+  challengeController.getAllTags.bind(challengeController)
 );
 
 router.get(
@@ -66,6 +74,14 @@ router.post(
 );
 
 router.get(
+  '/all',
+  authenticationToken,
+  requireTeacherOrOwner,
+  challengeRateLimit,
+  challengeController.getAllChallenges.bind(challengeController)
+);
+
+router.get(
   '/:challengeId',
   challengeRateLimit,
   optionalAuth,
@@ -77,7 +93,7 @@ router.put(
   authenticationToken,
   requireTeacherOrOwner,
   challengeRateLimit,
-  validate(CreateChallengeSchema),
+  validate(UpdateChallengeSchema),
   challengeController.updateChallenge.bind(challengeController)
 );
 

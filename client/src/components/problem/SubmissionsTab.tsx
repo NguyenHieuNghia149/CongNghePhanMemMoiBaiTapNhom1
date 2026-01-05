@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useSelector } from 'react-redux'
 import type { RootState } from '@/store/stores'
 import { Eye, AlertTriangle, Copy } from 'lucide-react'
+import { useTheme } from '@/contexts/useTheme'
 import MonacoEditorWrapper from '@/components/editor/MonacoEditorWrapper'
 import { submissionsService } from '@/services/api/submissions.service'
 import type { SubmissionDetail } from '@/types/submission.types'
@@ -13,10 +14,19 @@ export interface SubmissionsTabProps {
 
 const toUiStatus = (s: string | undefined) => {
   if (!s) return 'unknown'
-  if (s === 'ACCEPTED' || s === 'accepted') return 'accepted'
-  if (s === 'WRONG_ANSWER' || s === 'wrong') return 'wrong'
-  if (s === 'RUNTIME_ERROR' || s === 'runtime') return 'runtime'
-  if (s === 'TIME_LIMIT_EXCEEDED' || s === 'timeout') return 'timeout'
+  const normalized = s.toLowerCase()
+  if (normalized === 'accepted') return 'accepted'
+  if (normalized === 'wrong_answer' || normalized === 'wrong') return 'wrong'
+  if (normalized === 'runtime_error' || normalized === 'runtime')
+    return 'runtime'
+  if (normalized === 'time_limit_exceeded' || normalized === 'timeout')
+    return 'timeout'
+  if (normalized === 'compilation_error' || normalized === 'compile')
+    return 'compile'
+  if (normalized === 'memory_limit_exceeded' || normalized === 'memory')
+    return 'memory'
+  if (normalized === 'pending') return 'pending'
+  if (normalized === 'running') return 'running'
   return 'unknown'
 }
 
@@ -25,6 +35,10 @@ const getStatusLabel = (s: string) => {
   if (s === 'wrong') return 'Wrong Answer'
   if (s === 'runtime') return 'Runtime Error'
   if (s === 'timeout') return 'Time Limit'
+  if (s === 'compile') return 'Compilation Error'
+  if (s === 'memory') return 'Memory Limit'
+  if (s === 'pending') return 'Pending'
+  if (s === 'running') return 'Running'
   return 'Unknown'
 }
 
@@ -33,11 +47,15 @@ const getStatusColor = (s: string) => {
   if (s === 'wrong') return 'text-red-400'
   if (s === 'runtime') return 'text-orange-400'
   if (s === 'timeout') return 'text-yellow-400'
-  return 'text-gray-300'
+  if (s === 'compile') return 'text-red-300'
+  if (s === 'memory') return 'text-purple-400'
+  if (s === 'pending') return 'text-gray-400'
+  if (s === 'running') return 'text-blue-400'
+  return 'text-[var(--muted-text)]'
 }
 
 const getStatusBgColor = (s: string) => {
-  if (s === 'accepted') return 'bg-gray-950'
+  if (s === 'accepted') return 'bg-[var(--code-bg)]'
   return 'bg-transparent'
 }
 
@@ -45,6 +63,7 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
   problemId,
   participationId,
 }) => {
+  const { theme } = useTheme()
   const reduxParticipation = useSelector(
     (s: RootState) => s.exam?.currentParticipationId
   )
@@ -126,7 +145,7 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8 text-gray-300">
+      <div className="flex items-center justify-center p-8 text-[var(--text-color)]">
         Loading submissions...
       </div>
     )
@@ -143,39 +162,39 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
   }
 
   return (
-    <div className="bg-gray-900 p-6">
+    <div className="bg-[var(--exam-panel-bg)] p-6">
       {displayRows.length === 0 && (
         <div className="py-12 text-center">
-          <div className="mb-2 text-gray-400">
+          <div className="mb-2 text-[var(--muted-text)]">
             <AlertTriangle size={48} className="mx-auto mb-4 opacity-50" />
           </div>
-          <p className="text-lg text-gray-400">No submissions yet</p>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="text-lg text-[var(--muted-text)]">No submissions yet</p>
+          <p className="mt-1 text-sm text-[var(--muted-text)]">
             Submit your solution to see it here
           </p>
         </div>
       )}
 
       {!viewingSubmissionId && displayRows.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-gray-800">
+        <div className="overflow-x-auto rounded-lg border border-[var(--surface-border)]">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-800 bg-gray-950">
-                <th className="w-1/4 px-6 py-4 text-left text-sm font-semibold text-gray-300">
+              <tr className="border-b border-[var(--surface-border)] bg-[var(--code-bg)]">
+                <th className="w-1/4 px-6 py-4 text-left text-sm font-semibold text-[var(--muted-text)]">
                   Submission
                 </th>
-                <th className="w-1/6 px-6 py-4 text-left text-sm font-semibold text-gray-300">
+                <th className="w-1/6 px-6 py-4 text-left text-sm font-semibold text-[var(--muted-text)]">
                   Language
                 </th>
-                <th className="w-1/4 px-6 py-4 text-left text-sm font-semibold text-gray-300">
+                <th className="w-1/4 px-6 py-4 text-left text-sm font-semibold text-[var(--muted-text)]">
                   Code
                 </th>
-                <th className="w-1/4 px-6 py-4 text-left text-sm font-semibold text-gray-300">
+                <th className="w-1/4 px-6 py-4 text-left text-sm font-semibold text-[var(--muted-text)]">
                   Analysis
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800">
+            <tbody className="divide-y divide-[var(--surface-border)]">
               {displayRows.map(row => (
                 <tr
                   key={row.id}
@@ -189,18 +208,20 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
                         >
                           {getStatusLabel(row.status)}
                         </p>
-                        <p className="mt-1 text-xs text-gray-500">{row.date}</p>
+                        <p className="mt-1 text-xs text-[var(--muted-text)]">
+                          {row.date}
+                        </p>
                       </div>
                       {typeof row.testsPassed === 'number' &&
                         row.status !== 'accepted' && (
-                          <span className="rounded bg-gray-700 px-2 py-1 text-xs text-gray-300">
+                          <span className="rounded bg-[var(--surface-border)] px-2 py-1 text-xs text-[var(--text-color)]">
                             {row.testsPassed}/{row.totalTests} passed
                           </span>
                         )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-sm font-medium text-gray-300">
+                    <span className="text-sm font-medium text-[var(--text-color)]">
                       {row.language}
                     </span>
                   </td>
@@ -230,23 +251,14 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
       )}
 
       {viewingSubmissionId && (
-        <div className="rounded-lg border border-gray-800 bg-gray-900">
+        <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--exam-panel-bg)]">
           {(() => {
             const sub =
               submissions.find(s => s.submissionId === viewingSubmissionId) ||
               viewingDetail ||
               undefined
             const ui = toUiStatus(sub?.status || '')
-            const statusColor =
-              ui === 'accepted'
-                ? 'text-green-400'
-                : ui === 'wrong'
-                  ? 'text-red-400'
-                  : ui === 'runtime'
-                    ? 'text-orange-400'
-                    : ui === 'timeout'
-                      ? 'text-yellow-400'
-                      : 'text-gray-300'
+            const statusColor = getStatusColor(ui)
             const submittedAt = sub?.submittedAt
               ? new Date(sub.submittedAt).toLocaleString()
               : ''
@@ -255,50 +267,77 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
               : undefined
             return (
               <>
-                <div className="flex items-center justify-between border-b border-gray-800 bg-gray-950 p-4">
+                <div className="flex items-center justify-between border-b border-[var(--surface-border)] bg-[var(--code-bg)] p-4">
                   <button
                     onClick={() => setViewingSubmissionId(null)}
-                    className="text-l font-bold text-gray-300 hover:text-white"
+                    className="text-l font-bold text-[var(--text-color)] hover:opacity-80"
                   >
                     ← All Submissions
                   </button>
                 </div>
                 <div className="p-4" style={{ maxWidth: 800 }}>
                   <header className="mb-3 flex flex-col gap-2">
-                    <div className="flex w-full items-center justify-between">
-                      <h1 className={`${statusColor} text-xl font-semibold`}>
-                        {getStatusLabel(ui)}
-                      </h1>
-                      <p className="text-sm text-gray-400">{submittedAt}</p>
+                    <div className="flex w-full items-center justify-end">
+                      <p className="text-sm text-[var(--muted-text)]">
+                        {submittedAt}
+                      </p>
                     </div>
                     <div className="flex w-full items-center justify-between text-sm">
-                      <p className="text-gray-300">
+                      <p className="text-[var(--text-color)]">
                         Language: {sub?.language?.toUpperCase()}
                       </p>
-                      <div className="flex items-center gap-6 text-gray-400">
+                      <div className="flex items-center gap-6 text-[var(--muted-text)]">
                         {runtimeSeconds && (
                           <p>Runtime: {runtimeSeconds} seconds</p>
                         )}
                       </div>
                     </div>
                   </header>
-                  <div className="mb-4 overflow-hidden rounded border border-gray-800 bg-gray-950">
-                    <div className="border-b border-gray-700 bg-gray-800 px-4 py-2">
-                      <p className="text-sm text-gray-400">Summary</p>
+                  <div className="mb-4 overflow-hidden rounded border border-[var(--surface-border)] bg-[var(--code-bg)]">
+                    <div className="border-b border-[var(--surface-border)] bg-[var(--code-bg)] px-4 py-2">
+                      <p className="text-sm text-[var(--muted-text)]">
+                        Summary
+                      </p>
                     </div>
-                    <div className="p-4 text-sm text-gray-200">
-                      <span>
-                        Passed {sub?.result?.passed ?? 0}/
-                        {sub?.result?.total ?? 0}
-                      </span>
+                    <div className="p-6">
+                      {ui === 'accepted' ? (
+                        <>
+                          <div className="mb-4 text-center">
+                            <div className="text-2xl font-bold text-green-400">
+                              ✓ Accepted
+                            </div>
+                            <div className="mt-2 text-sm text-[var(--muted-text)]">
+                              Passed test cases: {sub?.result?.passed ?? 0} /{' '}
+                              {sub?.result?.total ?? 0}
+                            </div>
+                          </div>
+                          <div className="rounded border border-green-700 bg-green-900/20 p-4 text-center text-green-200">
+                            🎉 You have successfully completed this problem!
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="mb-4 text-center">
+                            <div
+                              className={`text-2xl font-bold ${statusColor}`}
+                            >
+                              {getStatusLabel(ui)}
+                            </div>
+                            <div className="mt-2 text-sm text-[var(--muted-text)]">
+                              Passed test cases: {sub?.result?.passed ?? 0} /{' '}
+                              {sub?.result?.total ?? 0}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="overflow-hidden rounded border border-gray-800 bg-gray-950">
-                    <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-2">
-                      <p className="text-sm text-gray-400">Code</p>
+                  <div className="overflow-hidden rounded border border-[var(--surface-border)] bg-[var(--code-bg)]">
+                    <div className="flex items-center justify-between border-b border-[var(--surface-border)] bg-[var(--code-bg)] px-4 py-2">
+                      <p className="text-sm text-[var(--muted-text)]">Code</p>
                       <div className="flex items-center gap-3">
                         {detailLoading && (
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-[var(--muted-text)]">
                             Loading...
                           </span>
                         )}
@@ -312,7 +351,7 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
                               anyDetail?.sourceCode || anyDetail?.code || ''
                             if (text) navigator.clipboard.writeText(text)
                           }}
-                          className="flex items-center gap-1 rounded bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600"
+                          className="flex items-center gap-1 rounded bg-[var(--surface-border)] px-2 py-1 text-xs text-[var(--text-color)] hover:opacity-80"
                         >
                           <Copy size={14} /> Copy
                         </button>
@@ -330,7 +369,7 @@ const SubmissionsTab: React.FC<SubmissionsTabProps> = ({
                         ).toLowerCase()}
                         readOnly={true}
                         height={800}
-                        editorTheme="vs-dark"
+                        editorTheme={theme === 'dark' ? 'vs-dark' : 'vs'}
                       />
                     </div>
                   </div>

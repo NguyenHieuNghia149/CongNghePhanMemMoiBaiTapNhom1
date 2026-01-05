@@ -5,7 +5,7 @@ import { useRanking } from '../../hooks/api/useRanking'
 import { useAuth } from '../../hooks/api/useAuth'
 import LoadingSpinner from '../../components/common/LoadingSpinner'
 import UserRankCard from '../../components/ranking/UserRankCard'
-import './ranking.css'
+import './Ranking.css'
 
 const Ranking: React.FC = () => {
   const [page, setPage] = useState(1)
@@ -60,10 +60,10 @@ const Ranking: React.FC = () => {
       <div className="ranking-page">
         <div className="ranking-container">
           <div className="py-8 text-center">
-            <h2 className="mb-2 text-xl font-semibold text-red-600">
+            <h2 className="mb-2 text-xl font-semibold text-destructive">
               Error Loading Ranking
             </h2>
-            <p className="text-gray-600">{error}</p>
+            <p className="text-muted-foreground">{error}</p>
           </div>
         </div>
       </div>
@@ -71,7 +71,7 @@ const Ranking: React.FC = () => {
   }
 
   return (
-    <div className="ranking-page">
+    <div className="ranking-page min-h-screen bg-background text-foreground">
       <div className="ranking-container">
         <div className="ranking-header">
           <h1 className="ranking-title">Leaderboard</h1>

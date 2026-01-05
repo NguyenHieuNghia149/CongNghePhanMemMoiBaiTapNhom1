@@ -90,10 +90,13 @@ export interface PaginatedResponse<T> {
 export interface ChallengeItem {
   id: string
   title: string
-  description: string | null
-  difficult: string
+  description: string // Match Challenge interface (non-nullable)
+  difficulty: 'easy' | 'medium' | 'hard' // Match Challenge interface type
+  topic: string // Add required topic property
   createdAt: string
   totalPoints: number
   isSolved: boolean
   isFavorite: boolean
+  topicName?: string
+  visibility: string
 }

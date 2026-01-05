@@ -1,9 +1,9 @@
 import React from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import MainLayout from '@/layouts/MainLayout/MainLayout'
 import AdminLayout from '@/layouts/AdminLayout/AdminLayout'
 import { AdminThemeProvider } from '@/contexts/AdminThemeContext'
-import Login from '@/pages/auth/login/Login'
+import Login from '@/pages/auth/Login/Login'
 import Register from '@/pages/auth/register/Register'
 import ForgotPassword from '@/pages/auth/forgotpassword/ForgotPassword'
 import Profile from '@/pages/profile/Profile'
@@ -14,6 +14,7 @@ import TopicLessonsPage from '@/pages/lessons/TopicLessonsPage'
 import { PublicRoute } from './PublicRoute'
 import { ProtectedRoute } from './ProtectedRoute'
 import { TeacherRoute } from './TeacherRoute'
+import { OwnerRoute } from './OwnerRoute'
 import ChallengePage from '@/pages/challenge/ChallengePage'
 import ProblemDetailPage from '@/pages/challengeDetail/ProblemDetailPage'
 import Ranking from '@/pages/ranking/Ranking'
@@ -30,6 +31,10 @@ import ManageLesson from '@/pages/admin/managelesson/ManageLesson'
 import ManageTopic from '@/pages/admin/managetopic/ManageTopic'
 import AdminHome from '@/pages/admin/adminhome/AdminHome'
 import UserSubmissionsPage from '@/pages/user/submissions/UserSubmissionsPage'
+import AdminChallengeList from '@/pages/admin/challenge/AdminChallengeList'
+import AdminCreateChallenge from '@/pages/admin/challenge/AdminCreateChallenge'
+import AdminExamList from '@/pages/admin/exam/AdminExamList'
+import AdminCreateExam from '@/pages/admin/exam/AdminCreateExam'
 
 export const router = createBrowserRouter([
   {
@@ -88,11 +93,11 @@ export const router = createBrowserRouter([
     path: 'admin/teachers',
     element: (
       <AdminThemeProvider>
-        <TeacherRoute>
+        <OwnerRoute>
           <AdminLayout>
             <ManageTeacher />
           </AdminLayout>
-        </TeacherRoute>
+        </OwnerRoute>
       </AdminThemeProvider>
     ),
   },
@@ -121,6 +126,90 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: 'admin/challenges',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <AdminChallengeList />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
+    path: 'admin/challenges/create',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <AdminCreateChallenge />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
+    path: 'admin/challenges/edit/:id',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <AdminCreateChallenge />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
+    path: 'admin/exams',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <AdminExamList />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
+    path: 'admin/exams/create',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <AdminCreateExam />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
+    path: 'admin/exams/edit/:id',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <AdminCreateExam />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
+    path: 'exam/:examId/results/manage',
+    element: (
+      <AdminThemeProvider>
+        <TeacherRoute>
+          <AdminLayout>
+            <ExamResultsAdmin />
+          </AdminLayout>
+        </TeacherRoute>
+      </AdminThemeProvider>
+    ),
+  },
+  {
     path: '/',
     element: <MainLayout />,
     children: [
@@ -138,7 +227,7 @@ export const router = createBrowserRouter([
       },
       {
         index: true,
-        element: <HomePage />,
+        element: <Navigate to="/dashboard" replace />,
       },
       {
         path: 'dashboard/challenge/:challengeId',
@@ -192,14 +281,6 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      {
-        path: 'exam/:examId/results/manage',
-        element: (
-          <TeacherRoute>
-            <ExamResultsAdmin />
-          </TeacherRoute>
-        ),
-      },
     ],
   },
 
@@ -214,11 +295,7 @@ export const router = createBrowserRouter([
 
   {
     path: 'exam/create',
-    element: (
-      <MainLayout>
-        <NotFound />
-      </MainLayout>
-    ),
+    element: <NotFound />,
   },
   {
     path: 'exam/:examId',
@@ -240,7 +317,9 @@ export const router = createBrowserRouter([
   {
     path: '*',
     element: (
+      <MainLayout>
         <NotFound />
+      </MainLayout>
     ),
   },
 ])

@@ -5,6 +5,7 @@ import {
   ExamState,
   ExamStatistics,
 } from '@/types/exam.types'
+import { logoutUser, initializeSession } from './authSlice'
 
 const initialState: ExamState = {
   exams: [],
@@ -13,6 +14,7 @@ const initialState: ExamState = {
   currentSubmission: null,
   // participation/session info for current exam
   currentParticipationId: null,
+  currentParticipationExamId: null,
   currentParticipationStartAt: null,
   currentParticipationExpiresAt: null,
   isLoading: false,
@@ -74,6 +76,7 @@ const examSlice = createSlice({
       state,
       action: PayloadAction<{
         participationId: string | null
+        examId?: string | null // NEW: Scope to exam
         startAt?: number | string | null
         expiresAt?: number | string | null
         // optional: the current challenge id for resume
@@ -81,6 +84,7 @@ const examSlice = createSlice({
       }>
     ) => {
       state.currentParticipationId = action.payload.participationId
+      state.currentParticipationExamId = action.payload.examId ?? null
       state.currentParticipationStartAt = action.payload.startAt ?? null
       state.currentParticipationExpiresAt = action.payload.expiresAt ?? null
       state.currentParticipationChallengeId =
@@ -90,6 +94,7 @@ const examSlice = createSlice({
 
     clearParticipation: state => {
       state.currentParticipationId = null
+      state.currentParticipationExamId = null
       state.currentParticipationStartAt = null
       state.currentParticipationExpiresAt = null
       state.currentParticipationChallengeId = null
@@ -129,6 +134,41 @@ const examSlice = createSlice({
       state.statistics = null
       state.error = null
     },
+  },
+  extraReducers: builder => {
+    // Clear exam state when user logs out
+    builder.addCase(logoutUser.fulfilled, state => {
+      state.exams = []
+      state.currentExam = null
+      state.submissions = []
+      state.currentSubmission = null
+      state.statistics = null
+      state.error = null
+      state.currentParticipationId = null
+      state.currentParticipationExamId = null
+      state.currentParticipationStartAt = null
+      state.currentParticipationExpiresAt = null
+      state.currentParticipationChallengeId = null
+      state.isLoading = false
+    })
+
+    // Clear exam state when session expires
+    builder.addCase(initializeSession.rejected, (state, action) => {
+      if (action.payload?.isRefreshTokenExpired) {
+        state.exams = []
+        state.currentExam = null
+        state.submissions = []
+        state.currentSubmission = null
+        state.statistics = null
+        state.error = null
+        state.currentParticipationId = null
+        state.currentParticipationExamId = null
+        state.currentParticipationStartAt = null
+        state.currentParticipationExpiresAt = null
+        state.currentParticipationChallengeId = null
+        state.isLoading = false
+      }
+    })
   },
 })
 

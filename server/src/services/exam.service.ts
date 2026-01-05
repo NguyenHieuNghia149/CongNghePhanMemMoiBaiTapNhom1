@@ -19,6 +19,7 @@ import {
 import { eq, inArray, and } from 'drizzle-orm';
 import { NotFoundException } from '@/exceptions/solution.exception';
 import { ProblemVisibility } from '@/enums/problemVisibility.enum';
+import { EExamParticipationStatus } from '@/enums/examParticipationStatus.enum';
 // Service should not use raw `db` directly; repositories manage DB access and transactions.
 import { BaseException } from '@/exceptions/auth.exceptions';
 import {
@@ -70,15 +71,27 @@ export class ExamService {
     currentAnswers: any;
     status: string;
   }> {
-    // Try to find existing IN_PROGRESS participation (only active sessions)
+    // Step 1: Try to find existing IN_PROGRESS participation
     const existing = await this.examParticipationRepository.findInProgressByExamAndUser(
       examId,
       userId
     );
+
     if (existing) {
-      console.log(
-        `[getOrCreateSession] Found existing IN_PROGRESS participation ${existing.id}. Returning it.`
-      );
+      // Step 2: Validate expiration BEFORE returning
+      const now = new Date();
+      if (existing.expiresAt && now > existing.expiresAt) {
+        // Auto-finalize as EXPIRED
+        await this.examParticipationRepository.updateParticipation(existing.id, {
+          status: EExamParticipationStatus.EXPIRED,
+          endTime: now,
+          submittedAt: existing.expiresAt, // Use original expiry time
+        });
+
+        throw new ExamTimeoutException();
+      }
+
+      // Step 3: Return valid session
       return {
         sessionId: existing.id,
         examId: existing.examId,
@@ -96,13 +109,23 @@ export class ExamService {
       };
     }
 
-    // No IN_PROGRESS participation exists, create a new one
-    console.log(
-      `[getOrCreateSession] No IN_PROGRESS participation found. Creating new session for user ${userId} in exam ${examId}.`
+    // Step 4: Check if user already completed this exam
+    const completed = await this.examParticipationRepository.findCompletedByExamAndUser(
+      examId,
+      userId
     );
 
+    if (completed) {
+      throw new BaseException(
+        'You have already completed this exam',
+        400,
+        'EXAM_ALREADY_COMPLETED'
+      );
+    }
+
+    // Step 5: No existing participation → create new one
     const examData = await this.examRepository.findById(examId);
-    if (!examData) throw new Error('Exam not found');
+    if (!examData) throw new ExamNotFoundException();
 
     const now = new Date();
     const durationMs = (examData.duration || 0) * 60 * 1000;
@@ -133,7 +156,7 @@ export class ExamService {
     const updated = await this.examParticipationRepository.updateParticipation(participation.id, {
       currentAnswers: {},
       lastSyncedAt: now,
-      status: 'IN_PROGRESS',
+      status: EExamParticipationStatus.IN_PROGRESS,
     });
 
     if (!updated) {
@@ -163,21 +186,14 @@ export class ExamService {
 
   async syncSession(sessionId: string, answers: any, clientTimestamp?: string): Promise<boolean> {
     const now = new Date();
-    console.log(
-      `[syncSession] Starting sync for session ${sessionId}. ClientTimestamp: ${clientTimestamp}`
-    );
 
     // Merge incoming partial answers with existing currentAnswers to avoid overwriting other problems
     const existing = await this.examParticipationRepository.findById(sessionId);
     if (!existing) {
-      console.error(`[syncSession] Session ${sessionId} not found`);
       throw new ExamParticipationNotFoundException();
     }
 
     const existingAnswers = existing.currentAnswers || {};
-    console.log(
-      `[syncSession] Existing answers for session: ${Object.keys(existingAnswers).length} problems`
-    );
 
     // If incoming answers include per-problem `updatedAt` timestamps, merge per-key
     // and only accept incoming values that are newer than stored ones. This prevents
@@ -217,23 +233,16 @@ export class ExamService {
         const accept = incomingUpdated === 0 ? true : incomingUpdated >= existingUpdated;
 
         if (accept) {
-          console.log(
-            `[syncSession] Accepting incoming answer for problem ${key} (incoming: ${incomingUpdated}, existing: ${existingUpdated})`
-          );
           merged[key] = {
-            ...existingItem,
+            existingItem,
             ...incomingItem,
           };
         } else {
           // keep existing
-          console.log(
-            `[syncSession] Rejecting incoming answer for problem ${key} (incoming: ${incomingUpdated}, existing: ${existingUpdated})`
-          );
           merged[key] = existingItem;
         }
       } catch (err) {
         // On any parse/merge error, be conservative and keep existing value
-        console.warn(`[syncSession] Error merging problem ${key}, keeping existing:`, err);
         merged[key] = existingAnswers[key] || incoming[key];
       }
     }
@@ -243,7 +252,6 @@ export class ExamService {
       lastSyncedAt: now,
     });
 
-    console.log(`[syncSession] ✓ Session ${sessionId} synced. Updated: ${!!updated}`);
     return !!updated;
   }
 
@@ -288,6 +296,137 @@ export class ExamService {
     return newExam;
   }
 
+  async updateExam(
+    examId: string,
+    examData: Partial<CreateExamInput> & { id?: string }
+  ): Promise<ExamResponse> {
+    // Check for existing participations
+    const participations = await this.examParticipationRepository.findByExamId(examId);
+    const hasParticipations = participations.length > 0;
+
+    const { challenges, ...fields } = examData;
+
+    // Map frontend fields back to DB columns if necessary
+    const dbFields: any = {};
+    if (fields.title) dbFields.title = fields.title;
+    if (fields.password) dbFields.password = fields.password;
+    if (fields.duration) dbFields.duration = fields.duration;
+    if (fields.startDate) dbFields.startDate = new Date(fields.startDate);
+    if (fields.endDate) dbFields.endDate = new Date(fields.endDate);
+    if (fields.isVisible !== undefined) dbFields.isVisible = fields.isVisible;
+    if (fields.maxAttempts !== undefined) dbFields.maxAttempts = fields.maxAttempts;
+
+    if (hasParticipations) {
+      // Validate that restricted fields are NOT being changed
+      const existingExam = await this.examRepository.findById(examId);
+      if (!existingExam) {
+        throw new NotFoundException(`Exam with ID ${examId} not found.`);
+      }
+
+      // Helper to check date equality (within 1 second tolerance)
+      const isDateDiff = (d1: Date | string, d2: Date) => {
+        const t1 = new Date(d1).getTime();
+        const t2 = d2.getTime();
+        return Math.abs(t1 - t2) > 1000;
+      };
+
+      const isDurationChanged =
+        fields.duration !== undefined && fields.duration !== existingExam.duration;
+      const isStartChanged =
+        fields.startDate && isDateDiff(fields.startDate, existingExam.startDate);
+      const isEndChanged = fields.endDate && isDateDiff(fields.endDate, existingExam.endDate);
+      const isMaxAttemptsChanged =
+        fields.maxAttempts !== undefined && fields.maxAttempts !== existingExam.maxAttempts;
+
+      if (isDurationChanged || isStartChanged || isEndChanged || isMaxAttemptsChanged) {
+        throw new BaseException(
+          'Cannot update duration, dates, or max attempts: Users have already participated in this exam.',
+          400,
+          'EXAM_HAS_PARTICIPATIONS'
+        );
+      }
+
+      // Check if challenges changed ONLY if challenges are provided in the update
+      if (challenges !== undefined) {
+        const currentLinks = await this.examToProblemsRepository.findByExamId(examId);
+        // Sort and map local challenges
+        const incomingList = challenges
+          .map((ch: any, index: number) => ({
+            id: ch.challengeId || ch.id,
+            order: ch.orderIndex ?? index,
+          }))
+          .sort((a, b) => a.order - b.order);
+
+        const currentList = currentLinks
+          .map(l => ({
+            id: l.problemId,
+            order: l.orderIndex,
+          }))
+          .sort((a, b) => a.order - b.order);
+
+        let isChallengesChanged = incomingList.length !== currentList.length;
+        if (!isChallengesChanged) {
+          for (let i = 0; i < incomingList.length; i++) {
+            const inc = incomingList[i];
+            const cur = currentList[i];
+            if (!inc || !cur || inc.id !== cur.id || inc.order !== cur.order) {
+              isChallengesChanged = true;
+              break;
+            }
+          }
+        }
+
+        if (isChallengesChanged) {
+          throw new BaseException(
+            'Cannot update challenges: Users have already participated in this exam.',
+            400,
+            'EXAM_HAS_PARTICIPATIONS'
+          );
+        }
+      }
+
+      // If we reach here, it's a safe update (only title, password, visibility changed)
+      // We can use the simple update method
+      await this.examRepository.update(examId, dbFields);
+      return this.getExamById(examId);
+    }
+
+    // Normal update for exams without participations
+    if (challenges !== undefined) {
+      // Update exam AND challenges (wipe existing logic in repo is fine here because we provide new set)
+      const challengeLinks = challenges.map((ch: any, index: number) => ({
+        challengeId: ch.challengeId || ch.id,
+        orderIndex: ch.orderIndex ?? index,
+      }));
+
+      await this.examRepository.updateExamWithChallenges(examId, dbFields, challengeLinks);
+    } else {
+      // Only update fields, preserve existing challenges
+      await this.examRepository.update(examId, dbFields);
+    }
+
+    return this.getExamById(examId);
+  }
+
+  async deleteExam(examId: string): Promise<boolean> {
+    const existing = await this.examRepository.findById(examId);
+    if (!existing) {
+      throw new ExamNotFoundException();
+    }
+
+    // Check for existing participations
+    const participations = await this.examParticipationRepository.findByExamId(examId);
+    if (participations.length > 0) {
+      throw new BaseException(
+        'Cannot delete exam: Users have already participated in this exam.',
+        400,
+        'EXAM_HAS_PARTICIPATIONS'
+      );
+    }
+
+    return this.examRepository.deleteExamWithRelations(examId);
+  }
+
   async getExamById(examId: string): Promise<ExamResponse> {
     const examData = await this.examRepository.findById(examId);
     if (!examData) {
@@ -326,6 +465,7 @@ export class ExamService {
         id: p.id,
         title: p.title,
         difficulty: p.difficult,
+        visibility: p.visibility,
         orderIndex: orderMap.get(p.id) ?? 0,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
@@ -382,7 +522,7 @@ export class ExamService {
     userId: string;
     startedAt: string;
     endTime?: Date | null;
-    isCompleted: boolean;
+    status: string;
     currentAnswers?: any;
     expiresAt?: string | null;
     lastSyncedAt?: string | null;
@@ -412,7 +552,7 @@ export class ExamService {
           ? participation.startTime.toISOString()
           : String(participation.startTime),
       endTime: participation.endTime || null,
-      isCompleted: !!participation.isCompleted,
+      status: participation.status,
       currentAnswers: participation.currentAnswers || {},
       expiresAt:
         participation.expiresAt instanceof Date
@@ -435,16 +575,18 @@ export class ExamService {
     startedAt: string;
     expiresAt?: string | null;
     endTime?: Date | null;
-    isCompleted: boolean;
-    status?: string;
+    status: string;
   } | null> {
-    // Only return IN_PROGRESS participations to allow resume
-    const participation = await this.examParticipationRepository.findInProgressByExamAndUser(
+    // Get latest participation regardless of status
+    const participations = await this.examParticipationRepository.findAllByExamAndUser(
       examId,
       userId
     );
+    const participation = participations[0];
 
-    if (!participation) return null;
+    if (!participation) {
+      return null;
+    }
 
     return {
       id: participation.id,
@@ -461,8 +603,7 @@ export class ExamService {
             ? String(participation.expiresAt)
             : null,
       endTime: participation.endTime || null,
-      isCompleted: !!participation.isCompleted,
-      status: participation.status || 'IN_PROGRESS',
+      status: participation.status,
     };
   }
 
@@ -471,11 +612,13 @@ export class ExamService {
     offset = 0,
     search?: string,
     filterType?: 'all' | 'my' | 'participated',
-    userId?: string
+    userId?: string,
+    isVisible?: boolean
   ): Promise<{ data: ExamResponse[]; total: number }> {
     // Build options for repository
     const options: any = {};
     if (search) options.search = search;
+    if (isVisible !== undefined) options.isVisible = isVisible;
 
     // If filterType is 'participated' and userId provided, get exam ids participated by user
     if (filterType === 'participated' && userId) {
@@ -537,13 +680,25 @@ export class ExamService {
       throw new InvalidPasswordException();
     }
 
-    // Check if user already joined
-    const existingParticipation = await this.examParticipationRepository.findByExamAndUser(
+    // Check max attempts
+    const previousParticipations = await this.examParticipationRepository.findAllByExamAndUser(
       examId,
       userId
     );
-    if (existingParticipation && !existingParticipation.isCompleted) {
+
+    // Check if user already joined and is IN_PROGRESS
+    const existingInProgress = previousParticipations.find(p => p.status === 'IN_PROGRESS');
+    if (existingInProgress) {
       throw new ExamAlreadyJoinedException();
+    }
+
+    // Check strict max attempts
+    if (examData.maxAttempts && previousParticipations.length >= examData.maxAttempts) {
+      throw new BaseException(
+        'You have reached the maximum number of attempts for this exam',
+        400,
+        'MAX_ATTEMPTS_REACHED'
+      );
     }
 
     // Calculate expiresAt: min(startTime + duration, exam.endDate)
@@ -598,7 +753,7 @@ export class ExamService {
     }
 
     // Check if already completed
-    if (participation.isCompleted) {
+    if (participation.status === 'SUBMITTED' || participation.status === 'EXPIRED') {
       throw new BaseException('Exam already submitted', 400, 'ALREADY_SUBMITTED');
     }
 
@@ -635,7 +790,7 @@ export class ExamService {
     // Mark participation as completed and set submittedAt, expiresAt, score
     const updated = await this.examParticipationRepository.updateParticipation(participationId, {
       endTime: new Date(),
-      isCompleted: true,
+      status: 'SUBMITTED',
       submittedAt: new Date(),
       expiresAt: new Date(), // Mark as expired since exam is submitted
       score: totalScore,
@@ -654,7 +809,11 @@ export class ExamService {
 
   async autoSubmitExam(participationId: string): Promise<void> {
     const participation = await this.examParticipationRepository.findById(participationId);
-    if (!participation || participation.isCompleted) {
+    if (
+      !participation ||
+      participation.status === 'SUBMITTED' ||
+      participation.status === 'EXPIRED'
+    ) {
       return;
     }
 
@@ -681,7 +840,7 @@ export class ExamService {
     // Mark as completed
     await this.examParticipationRepository.updateParticipation(participationId, {
       endTime: effectiveEnd,
-      isCompleted: true,
+      status: 'EXPIRED',
     });
   }
 
@@ -720,7 +879,6 @@ export class ExamService {
             finalized++;
           } catch (err) {
             // log and continue
-            console.error(`Failed to auto-submit participation ${p.id}:`, err);
           }
         }
       }
@@ -979,7 +1137,6 @@ export class ExamService {
     // Get user info
     const userRepo = new (await import('@/repositories/user.repository')).UserRepository();
     const user = await userRepo.findById(participation.userId);
-    console.log(user);
 
     // Get solutions for each problem
     const solutions = await Promise.all(
@@ -1021,16 +1178,6 @@ export class ExamService {
 
           // score = Math.round((passedPoints / maxPoints) * 100);
           score = passedPoints;
-          console.log(
-            'Score for problem',
-            problemId,
-            ':',
-            score,
-            '/',
-            maxPoints,
-            'points',
-            passedPoints
-          );
         }
 
         return {

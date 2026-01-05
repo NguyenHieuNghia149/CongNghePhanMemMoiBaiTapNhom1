@@ -16,8 +16,8 @@ export const RegisterSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
       'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
     ),
-  firstname: z.string().min(1, 'Firstname must be at least 1 characters'),
-  lastname: z.string().min(1, 'Lastname must be at least 1 characters'),
+  firstName: z.string().min(1, 'Firstname must be at least 1 characters'),
+  lastName: z.string().min(1, 'Lastname must be at least 1 characters'),
   otp: z.string().min(6, 'otp idvalid'),
 });
 
@@ -82,7 +82,7 @@ export const PasswordResetSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
       'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
     ),
-  opt: z.string().min(1, 'OTP is required'),
+  otp: z.string().min(1, 'OTP is required'),
 });
 
 export type PasswordResetInput = z.infer<typeof PasswordResetSchema>;
@@ -115,3 +115,11 @@ export const GoogleLoginSchema = z.object({
 });
 
 export type GoogleLoginInput = z.infer<typeof GoogleLoginSchema>;
+
+// OTP Verification Schema
+export const VerifyOTPSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  otp: z.string().min(6, 'OTP must be 6 digits').max(6, 'OTP must be 6 digits'),
+});
+
+export type VerifyOTPInput = z.infer<typeof VerifyOTPSchema>;
